@@ -1,0 +1,36 @@
+# Compiled class files
+*.class
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Build directories
+out/
+target/
+bin/
+
+# Configuration files with sensitive data
+config/database.properties
+
+# Logs
+*.log
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Java specific
+.mtj.tmp/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# OS specific files
+.DS_Store
+Thumbs.db

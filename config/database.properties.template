@@ -1,0 +1,3 @@
+db.url=jdbc:mysql://localhost:3306/accident_tracker
+db.username=your_username_here
+db.password=your_password_here
