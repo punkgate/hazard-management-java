@@ -1,0 +1,523 @@
+package ui;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.*;
+import java.util.*;
+import javax.swing.table.DefaultTableModel;
+import db.DatabaseConnection;
+import java.io.File;
+import java.io.PrintWriter;
+import javax.swing.table.TableCellRenderer;
+
+public class AdminDashboardFrame extends JFrame {
+    private JTable accidentsTable;
+    private JTable membersTable;
+    private JTabbedPane tabbedPane;
+    private DefaultTableModel accidentsModel;
+    private JPanel statsPanel;
+    private Color highSeverityColor = new Color(255, 102, 102);
+    private Color mediumSeverityColor = new Color(255, 204, 102);
+    private Color lowSeverityColor = new Color(102, 255, 102);
+
+    public AdminDashboardFrame(String username) {
+        setTitle("Admin Dashboard - Accident Tracker");
+        setSize(1200, 800);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+        getContentPane().setBackground(new Color(240, 240, 240));
+        
+        // Welcome Panel
+        JPanel welcomePanel = new JPanel(new BorderLayout());
+        welcomePanel.setBackground(new Color(51, 51, 51));
+        welcomePanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JLabel welcomeLabel = new JLabel("Welcome, " + username);
+        welcomeLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        welcomeLabel.setForeground(Color.WHITE);
+        welcomePanel.add(welcomeLabel, BorderLayout.WEST);
+        
+        add(welcomePanel, BorderLayout.NORTH);
+        
+        // Create Dashboard Stats Panel
+        createStatsPanel();
+        
+        tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        tabbedPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Create Accidents Panel with Filters
+        JPanel accidentsPanel = new JPanel(new BorderLayout());
+        accidentsPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Filters Panel
+        JPanel filtersPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        filtersPanel.setBackground(Color.WHITE);
+        filtersPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY),
+            BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+
+        // Add filters
+        filtersPanel.add(new JLabel("Severity:"));
+        JComboBox<String> severityFilter = new JComboBox<>(new String[]{"All", "Low", "Medium", "High"});
+        filtersPanel.add(severityFilter);
+
+        filtersPanel.add(new JLabel("Location:"));
+        JComboBox<String> locationFilter = new JComboBox<>(getLocations());
+        filtersPanel.add(locationFilter);
+
+        filtersPanel.add(new JLabel("Date:"));
+        JComboBox<String> dateFilter = new JComboBox<>(new String[]{"All Time", "Today", "This Week", "This Month"});
+        filtersPanel.add(dateFilter);
+
+        JButton applyFilters = new JButton("Apply Filters");
+        applyFilters.addActionListener(e -> applyFilters(
+            severityFilter.getSelectedItem().toString(),
+            locationFilter.getSelectedItem().toString(),
+            dateFilter.getSelectedItem().toString()
+        ));
+        filtersPanel.add(applyFilters);
+
+        // Create Accidents Panel with Filters and Colored Table
+        JPanel accidentsPanel = new JPanel(new BorderLayout());
+        accidentsPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Add Filters Panel
+        JPanel filtersPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        filtersPanel.setBackground(Color.WHITE);
+        filtersPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY),
+            BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+
+        // Add filters
+        filtersPanel.add(new JLabel("Severity:"));
+        JComboBox<String> severityFilter = new JComboBox<>(new String[]{"All", "Low", "Medium", "High"});
+        filtersPanel.add(severityFilter);
+
+        filtersPanel.add(new JLabel("Location:"));
+        JComboBox<String> locationFilter = new JComboBox<>(getLocations());
+        filtersPanel.add(locationFilter);
+
+        filtersPanel.add(new JLabel("Date:"));
+        JComboBox<String> dateFilter = new JComboBox<>(new String[]{"All Time", "Today", "This Week", "This Month"});
+        filtersPanel.add(dateFilter);
+
+        JButton applyFilters = new JButton("Apply Filters");
+        applyFilters.addActionListener(e -> applyFilters(
+            severityFilter.getSelectedItem().toString(),
+            locationFilter.getSelectedItem().toString(),
+            dateFilter.getSelectedItem().toString()
+        ));
+        filtersPanel.add(applyFilters);
+        accidentsPanel.add(filtersPanel, BorderLayout.NORTH);
+
+        // Create colored table
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT * FROM accidents ORDER BY date DESC");
+            accidentsModel = buildTableModel(rs);
+            accidentsTable = new JTable(accidentsModel) {
+                @Override
+                public Component prepareRenderer(javax.swing.table.TableCellRenderer renderer, int row, int column) {
+                    Component c = super.prepareRenderer(renderer, row, column);
+                    if (!isRowSelected(row)) {
+                        String severity = getValueAt(row, getColumn("severity").getModelIndex()).toString();
+                        c.setBackground(getSeverityColor(severity));
+                    }
+                    return c;
+                }
+            };
+            applyTableFormatting(accidentsTable);
+            accidentsPanel.add(new JScrollPane(accidentsTable), BorderLayout.CENTER);
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error loading reports!");
+        } finally {
+            try {
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // Create Members Panel
+        JPanel membersPanel = new JPanel(new BorderLayout());
+        try {
+            conn = DatabaseConnection.getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users WHERE role != 'admin'");
+            membersTable = new JTable(buildTableModel(rs));
+            membersPanel.add(new JScrollPane(membersTable), BorderLayout.CENTER);
+            
+            // Add member management buttons
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            
+            JButton addBtn = new JButton("Add New Member");
+            addBtn.addActionListener(e -> addNewMember());
+            buttonPanel.add(addBtn);
+
+            JButton deleteBtn = new JButton("Delete Selected");
+            deleteBtn.addActionListener(e -> deleteSelectedMember());
+            buttonPanel.add(deleteBtn);
+
+            JButton exportBtn = new JButton("Export to CSV");
+            exportBtn.addActionListener(e -> exportToCSV());
+            buttonPanel.add(exportBtn);
+            
+            membersPanel.add(buttonPanel, BorderLayout.SOUTH);
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error loading members!");
+        }
+
+        // Add tabs
+        tabbedPane.addTab("Accident Reports", accidentsPanel);
+        tabbedPane.addTab("Manage Members", membersPanel);
+        add(tabbedPane, BorderLayout.CENTER);
+
+        setVisible(true);
+    }
+
+    private void deleteSelectedMember() {
+        int selectedRow = membersTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a member to delete");
+            return;
+        }
+
+        int userId = (int) membersTable.getValueAt(selectedRow, 0);
+        String username = (String) membersTable.getValueAt(selectedRow, 1);
+
+        int confirm = JOptionPane.showConfirmDialog(
+            this,
+            "Are you sure you want to delete user: " + username + "?",
+            "Confirm Deletion",
+            JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            try (Connection conn = DatabaseConnection.getConnection()) {
+                // First delete all accidents reported by this user
+                PreparedStatement deleteAccidents = conn.prepareStatement(
+                    "DELETE FROM accidents WHERE reported_by = ?"
+                );
+                deleteAccidents.setString(1, username);
+                deleteAccidents.executeUpdate();
+
+                // Then delete the user
+                PreparedStatement deleteUser = conn.prepareStatement(
+                    "DELETE FROM users WHERE id = ?"
+                );
+                deleteUser.setInt(1, userId);
+                deleteUser.executeUpdate();
+
+                // Refresh the members table
+                RefreshMembersTable();
+                JOptionPane.showMessageDialog(this, "User deleted successfully!");
+            } catch (Exception e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Error deleting user: " + e.getMessage());
+            }
+        }
+    }
+
+    private void RefreshMembersTable() {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users WHERE role != 'admin'");
+            membersTable.setModel(buildTableModel(rs));
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error refreshing members table!");
+        }
+    }
+
+    private void addNewMember() {
+        JDialog dialog = new JDialog(this, "Add New Member", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(400, 250);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(5, 5, 5, 5);
+
+        // Username
+        gbc.gridx = 0; gbc.gridy = 0;
+        form.add(new JLabel("Username:"), gbc);
+        JTextField usernameField = new JTextField(20);
+        gbc.gridx = 1;
+        form.add(usernameField, gbc);
+
+        // Password
+        gbc.gridx = 0; gbc.gridy = 1;
+        form.add(new JLabel("Password:"), gbc);
+        JPasswordField passwordField = new JPasswordField(20);
+        gbc.gridx = 1;
+        form.add(passwordField, gbc);
+
+        JButton submitBtn = new JButton("Add Member");
+        submitBtn.addActionListener(e -> {
+            String username = usernameField.getText();
+            String password = new String(passwordField.getPassword());
+
+            if (username.isEmpty() || password.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please fill in all fields!");
+                return;
+            }
+
+            try (Connection conn = DatabaseConnection.getConnection()) {
+                String query = "INSERT INTO users (username, password, role) VALUES (?, ?, 'member')";
+                PreparedStatement stmt = conn.prepareStatement(query);
+                stmt.setString(1, username);
+                stmt.setString(2, password);
+                stmt.executeUpdate();
+
+                JOptionPane.showMessageDialog(dialog, "Member added successfully!");
+                dialog.dispose();
+                RefreshMembersTable();
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(dialog, "Error adding member: " + ex.getMessage());
+            }
+        });
+
+        dialog.add(form, BorderLayout.CENTER);
+        dialog.add(submitBtn, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void exportToCSV() {
+        try {
+            // Create file chooser
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Save CSV File");
+            fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("CSV Files", "csv"));
+            
+            if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                String filePath = fileChooser.getSelectedFile().getAbsolutePath();
+                if (!filePath.toLowerCase().endsWith(".csv")) {
+                    filePath += ".csv";
+                }
+
+                try (Connection conn = DatabaseConnection.getConnection();
+                     PrintWriter writer = new PrintWriter(new File(filePath))) {
+                    
+                    // Export Accidents
+                    Statement stmt = conn.createStatement();
+                    ResultSet rs = stmt.executeQuery("SELECT * FROM accidents");
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    // Write accidents header
+                    writer.println("ACCIDENTS REPORT");
+                    StringBuilder header = new StringBuilder();
+                    for (int i = 1; i <= columnCount; i++) {
+                        if (i > 1) header.append(",");
+                        header.append(metaData.getColumnName(i));
+                    }
+                    writer.println(header.toString());
+
+                    // Write accidents data
+                    while (rs.next()) {
+                        StringBuilder row = new StringBuilder();
+                        for (int i = 1; i <= columnCount; i++) {
+                            if (i > 1) row.append(",");
+                            String value = rs.getString(i);
+                            if (value != null) {
+                                value = value.replace("\"", "\"\"");
+                                value = "\"" + value + "\"";
+                            }
+                            row.append(value);
+                        }
+                        writer.println(row.toString());
+                    }
+
+                    // Add space between tables
+                    writer.println("\n");
+
+                    // Export Members
+                    rs = stmt.executeQuery("SELECT id, username, role FROM users WHERE role != 'admin'");
+                    metaData = rs.getMetaData();
+                    columnCount = metaData.getColumnCount();
+
+                    // Write members header
+                    writer.println("MEMBERS LIST");
+                    header = new StringBuilder();
+                    for (int i = 1; i <= columnCount; i++) {
+                        if (i > 1) header.append(",");
+                        header.append(metaData.getColumnName(i));
+                    }
+                    writer.println(header.toString());
+
+                    // Write members data
+                    while (rs.next()) {
+                        StringBuilder row = new StringBuilder();
+                        for (int i = 1; i <= columnCount; i++) {
+                            if (i > 1) row.append(",");
+                            String value = rs.getString(i);
+                            if (value != null) {
+                                value = value.replace("\"", "\"\"");
+                                value = "\"" + value + "\"";
+                            }
+                            row.append(value);
+                        }
+                        writer.println(row.toString());
+                    }
+
+                    JOptionPane.showMessageDialog(this, "Data exported successfully to: " + filePath);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error exporting data: " + e.getMessage());
+        }
+    }
+
+    private void createStatsPanel() {
+        statsPanel = new JPanel(new GridLayout(1, 4, 15, 0));
+        statsPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        statsPanel.setBackground(new Color(240, 240, 240));
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // Total Accidents
+            addStatCard(statsPanel, "Total Accidents", getTotalCount(conn, "accidents"), new Color(51, 153, 255));
+            
+            // High Severity
+            addStatCard(statsPanel, "High Severity", getCountBySeverity(conn, "High"), highSeverityColor);
+            
+            // Medium Severity
+            addStatCard(statsPanel, "Medium Severity", getCountBySeverity(conn, "Medium"), mediumSeverityColor);
+            
+            // Low Severity
+            addStatCard(statsPanel, "Low Severity", getCountBySeverity(conn, "Low"), lowSeverityColor);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        add(statsPanel, BorderLayout.NORTH);
+    }
+
+    private void addStatCard(JPanel container, String title, int value, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(Color.WHITE);
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(color, 2),
+            BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        ));
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        card.add(titleLabel, BorderLayout.NORTH);
+
+        JLabel valueLabel = new JLabel(String.valueOf(value));
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        valueLabel.setForeground(color);
+        card.add(valueLabel, BorderLayout.CENTER);
+
+        container.add(card);
+    }
+
+    private int getTotalCount(Connection conn, String table) throws SQLException {
+        Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table);
+        return rs.next() ? rs.getInt(1) : 0;
+    }
+
+    private int getCountBySeverity(Connection conn, String severity) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("SELECT COUNT(*) FROM accidents WHERE severity = ?");
+        stmt.setString(1, severity);
+        ResultSet rs = stmt.executeQuery();
+        return rs.next() ? rs.getInt(1) : 0;
+    }
+
+    private String[] getLocations() {
+        Set<String> locations = new HashSet<>();
+        locations.add("All");
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT DISTINCT location FROM accidents");
+            while (rs.next()) {
+                locations.add(rs.getString("location"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return locations.toArray(new String[0]);
+    }
+
+    private void applyFilters(String severity, String location, String dateRange) {
+        StringBuilder query = new StringBuilder("SELECT * FROM accidents WHERE 1=1");
+        
+        if (!"All".equals(severity)) {
+            query.append(" AND severity = '").append(severity).append("'");
+        }
+        
+        if (!"All".equals(location)) {
+            query.append(" AND location = '").append(location).append("'");
+        }
+        
+        switch (dateRange) {
+            case "Today":
+                query.append(" AND DATE(date) = CURDATE()");
+                break;
+            case "This Week":
+                query.append(" AND WEEK(date) = WEEK(CURDATE())");
+                break;
+            case "This Month":
+                query.append(" AND MONTH(date) = MONTH(CURDATE())");
+                break;
+        }
+        
+        query.append(" ORDER BY date DESC");
+        
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query.toString());
+            accidentsTable.setModel(buildTableModel(rs));
+            applyTableFormatting(accidentsTable);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error applying filters: " + e.getMessage());
+        }
+    }
+
+    private Color getSeverityColor(String severity) {
+        switch (severity.toLowerCase()) {
+            case "high": return highSeverityColor;
+            case "medium": return mediumSeverityColor;
+            case "low": return lowSeverityColor;
+            default: return Color.WHITE;
+        }
+    }
+
+    private void applyTableFormatting(JTable table) {
+        table.setRowHeight(25);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+    }
+
+    public static DefaultTableModel buildTableModel(ResultSet rs) throws SQLException {
+        ResultSetMetaData metaData = rs.getMetaData();
+
+        Vector<String> columnNames = new Vector<>();
+        int columnCount = metaData.getColumnCount();
+        for (int i = 1; i <= columnCount; i++) {
+            columnNames.add(metaData.getColumnName(i));
+        }
+
+        Vector<Vector<Object>> data = new Vector<>();
+        while (rs.next()) {
+            Vector<Object> row = new Vector<>();
+            for (int i = 1; i <= columnCount; i++) {
+                row.add(rs.getObject(i));
+            }
+            data.add(row);
+        }
+
+        return new DefaultTableModel(data, columnNames);
+    }
+}
